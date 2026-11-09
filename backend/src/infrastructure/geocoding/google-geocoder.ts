@@ -33,6 +33,7 @@ export function parseGoogleResponse(body: unknown): GeocodeResult {
 
 /** Google Geocoding API による逆ジオコーダ。サーバー側だけで使い、キーをブラウザに出さない。 */
 export class GoogleGeocoder implements Geocoder {
+  readonly provider = 'google';
   private readonly logger = new Logger(GoogleGeocoder.name);
 
   constructor(

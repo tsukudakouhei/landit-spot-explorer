@@ -24,7 +24,17 @@ describe('loadConfig', () => {
     expect(config).toMatchObject({ databaseUrl: 'postgres://app:app@db:5432/spots', port: 8080, googleGeocodingApiKey: 'key', geocodeCacheTtlDays: 7, geocodeGridDecimals: 4 });
   });
 
-  it.each([['PORT', 'abc'], ['GEOCODE_GRID_DECIMALS', '2.5'], ['GEOCODE_CACHE_TTL_DAYS', '-1']])(
+  it.each(['1', '6'])('GEOCODE_GRID_DECIMALS=%s（境界値）は受け付ける', (value) => {
+    expect(loadConfig({ GEOCODE_GRID_DECIMALS: value }).geocodeGridDecimals).toBe(Number(value));
+  });
+
+  it.each([
+    ['PORT', 'abc'],
+    ['GEOCODE_GRID_DECIMALS', '2.5'],
+    ['GEOCODE_GRID_DECIMALS', '0'],
+    ['GEOCODE_GRID_DECIMALS', '7'],
+    ['GEOCODE_CACHE_TTL_DAYS', '-1'],
+  ])(
     '%s=%s のような不正値は起動時にエラー',
     (name, value) => {
       expect(() => loadConfig({ [name]: value })).toThrow(new RegExp(`Invalid ${name}`));

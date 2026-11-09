@@ -1,5 +1,7 @@
 import { resolve } from 'node:path';
 import { DataSource } from 'typeorm';
+import { ReverseGeocodeUseCase } from '../../../application/reverse-geocode.usecase';
+import { GeocodeResult, Geocoder } from '../../../domain/geocode/geocoder';
 import { CsvSeeder } from '../../seed/csv-seeder';
 import { buildDataSourceOptions, initializeWithRetry } from './data-source';
 import { GeocodeCacheOrmEntity } from './entities/geocode-cache.orm-entity';
@@ -131,5 +133,52 @@ describe('TypeORM + PostGIS integration', () => {
     });
     expect(await cache.findByGridKey('30.000:140.000')).toMatchObject({ address: null });
     expect(await cache.findByGridKey('0.000:0.000')).toBeNull();
+  });
+
+  it('ReverseGeocodeUseCase × 実キャッシュ: プロバイダが変わったら上書きし、失敗時は残っている行を返す', async () => {
+    const cache = new TypeOrmGeocodeCacheRepository(dataSource.getRepository(GeocodeCacheOrmEntity));
+    const options = { ttlDays: 30, gridDecimals: 3 };
+    const now = () => new Date('2026-11-09T00:00:00Z');
+    const geocoderReturning = (provider: 'google' | 'gsi', result: GeocodeResult): Geocoder => ({
+      provider,
+      reverse: () => Promise.resolve(result),
+    });
+
+    // キー無し（GSI）で保存 → Google に切り替えると TTL 内でも取り直して上書きする
+    const gsi = new ReverseGeocodeUseCase(geocoderReturning('gsi', { kind: 'found', address: '丸の内二丁目', provider: 'gsi' }), cache, options, now);
+    const google = new ReverseGeocodeUseCase(
+      geocoderReturning('google', { kind: 'found', address: '東京都千代田区丸の内２丁目', provider: 'google' }),
+      cache,
+      options,
+      now,
+    );
+    const googleDown = new ReverseGeocodeUseCase(
+      geocoderReturning('google', { kind: 'unavailable', provider: 'google', reason: 'HTTP 503' }),
+      cache,
+      options,
+      now,
+    );
+    const gsiDown = new ReverseGeocodeUseCase(
+      geocoderReturning('gsi', { kind: 'unavailable', provider: 'gsi', reason: 'HTTP 503' }),
+      cache,
+      options,
+      now,
+    );
+
+    await expect(gsi.execute(35.6801, 139.7671)).resolves.toMatchObject({ address: '丸の内二丁目', provider: 'gsi', cached: false });
+    await expect(google.execute(35.6801, 139.7671)).resolves.toMatchObject({ provider: 'google', cached: false, status: 'found' });
+    expect(await cache.findByGridKey('35.680:139.767')).toMatchObject({ provider: 'google', address: '東京都千代田区丸の内２丁目' });
+
+    // GSI に戻した状態で GSI が落ちていても、Google の行を stale として返す（保存は変わらない）
+    await expect(gsiDown.execute(35.6801, 139.7671)).resolves.toEqual({
+      address: '東京都千代田区丸の内２丁目',
+      provider: 'google',
+      cached: true,
+      gridKey: '35.680:139.767',
+      status: 'found',
+    });
+    // 行が無いグリッドで失敗したら保存せず unavailable
+    await expect(googleDown.execute(20.0, 150.0)).resolves.toMatchObject({ address: null, status: 'unavailable' });
+    expect(await cache.findByGridKey('20.000:150.000')).toBeNull();
   });
 });

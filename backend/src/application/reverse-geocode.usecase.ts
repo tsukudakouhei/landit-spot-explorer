@@ -7,11 +7,20 @@ export interface ReverseGeocodeOptions {
   readonly gridDecimals: number;
 }
 
+/**
+ * - found:       住所あり
+ * - not_found:   住所が無い地点（海上など）
+ * - unavailable: 外部 API の失敗で取得できず、使えるキャッシュも無い
+ * address が null のとき、フロントは status で「住所が無い」と「取得できなかった」を区別できる。
+ */
+export type ReverseGeocodeStatus = 'found' | 'not_found' | 'unavailable';
+
 export interface ReverseGeocodeOutput {
   readonly address: string | null;
   readonly provider: GeocodeProvider;
   readonly cached: boolean;
   readonly gridKey: string;
+  readonly status: ReverseGeocodeStatus;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -31,8 +40,8 @@ export class ReverseGeocodeUseCase {
     const now = this.now();
 
     const hit = await this.cache.findByGridKey(gridKey);
-    if (hit && this.isFresh(hit, now)) {
-      return { address: hit.address, provider: hit.provider, cached: true, gridKey };
+    if (hit && this.isUsable(hit, now)) {
+      return fromCache(hit);
     }
 
     // グリッド中心で問い合わせることで、キャッシュの値がそのグリッドを代表するようにする
@@ -43,8 +52,10 @@ export class ReverseGeocodeUseCase {
     let address: string | null;
     switch (result.kind) {
       case 'unavailable':
-        // 一時的な失敗を保存すると TTL の間ずっと null が返り続けるため、保存せずその場だけ null を返す
-        return { address: null, provider: result.provider, cached: false, gridKey };
+        // stale-if-error: 期限切れ・別プロバイダの行でも、何も無いよりは役に立つので返す（保存はしない）
+        if (hit) return fromCache(hit);
+        // 一時的な失敗を保存すると TTL の間ずっと null が返り続けるため、保存しない
+        return { address: null, provider: result.provider, cached: false, gridKey, status: 'unavailable' };
       case 'found':
         address = result.address;
         break;
@@ -68,10 +79,25 @@ export class ReverseGeocodeUseCase {
       fetchedAt: now,
     });
 
-    return { address, provider: result.provider, cached: false, gridKey };
+    return { address, provider: result.provider, cached: false, gridKey, status: result.kind };
   }
 
-  private isFresh(entry: GeocodeCacheEntry, now: Date): boolean {
-    return now.getTime() - entry.fetchedAt.getTime() < this.options.ttlDays * MS_PER_DAY;
+  /**
+   * TTL 内で、かつ今のジオコーダと同じプロバイダが保存した行だけを使う。
+   * キー無し（GSI）で溜めた粗い住所が、Google キー設定後も TTL の間返り続けるのを防ぐため。
+   */
+  private isUsable(entry: GeocodeCacheEntry, now: Date): boolean {
+    const fresh = now.getTime() - entry.fetchedAt.getTime() < this.options.ttlDays * MS_PER_DAY;
+    return fresh && entry.provider === this.geocoder.provider;
   }
+}
+
+function fromCache(entry: GeocodeCacheEntry): ReverseGeocodeOutput {
+  return {
+    address: entry.address,
+    provider: entry.provider,
+    cached: true,
+    gridKey: entry.gridKey,
+    status: entry.address === null ? 'not_found' : 'found',
+  };
 }

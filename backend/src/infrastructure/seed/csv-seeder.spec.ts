@@ -42,8 +42,18 @@ describe('parseSpotsCsv', () => {
     expect(() => parseSpotsCsv('name,category,lat,lng,address\nA,公園,35,139,東京都')).toThrow(/missing required column "long"/);
   });
 
-  it('列数が足りない行は CsvParseError', () => {
-    expect(() => parseSpotsCsv('name,category,lat,long,address\nA,公園,35')).toThrow(/line 2/);
+  it('列数が足りない行は行番号付きの CsvParseError', () => {
+    expect(() => parseSpotsCsv('name,category,lat,long,address\nA,公園,35')).toThrow(/line 2: expected 5 columns but got 3/);
+  });
+
+  it('列数が多い行も行番号付きの CsvParseError', () => {
+    expect(() => parseSpotsCsv('name,category,lat,long,address\nA,公園,35,139,東京都\nB,神社,36,140,千葉県,余分')).toThrow(
+      /line 3: expected 5 columns but got 6/,
+    );
+  });
+
+  it('引用符が閉じていない行は行番号付きの CsvParseError', () => {
+    expect(() => parseSpotsCsv('name,category,lat,long,address\n"A,公園,35,139,東京都')).toThrow(/line 2: unclosed double quote/);
   });
 
   it('空ファイルは 0 件', () => {

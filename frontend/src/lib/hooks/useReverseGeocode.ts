@@ -1,16 +1,23 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { reverseGeocode, type ReverseGeocodeResponse } from "@/lib/api";
+import { reverseGeocode, type GeocodeStatus, type ReverseGeocodeResponse } from "@/lib/api";
 import type { LatLng } from "@/lib/geo";
 
 const THIRTY_MINUTES = 30 * 60 * 1000;
 
 /**
- * `address: null` かつ `cached: false` は「今回外部 API から住所が取れなかった」応答。
- * 一時障害の可能性があるので保持せず、次に同じグリッドへ来たら取り直す。
- * （`cached: true` の null はサーバーが確定させた「住所なし（海上など）」なので通常どおり保持する）
+ * 応答の status を返す。status が無い古い応答は安全側に倒す:
+ * 住所があれば found、無ければ not_found（unavailable と推定して再取得を繰り返すことはしない）。
  */
-export function isUnresolvedAddress(data: ReverseGeocodeResponse | undefined): boolean {
-  return data !== undefined && data.address === null && !data.cached;
+export function resolveGeocodeStatus(data: ReverseGeocodeResponse): GeocodeStatus {
+  return data.status ?? (data.address !== null ? "found" : "not_found");
+}
+
+/**
+ * 今回は住所が取れなかった（一時障害）応答か。
+ * この場合だけ保持せず、次に同じグリッドを見たら取り直す。not_found（海上など）は cached の真偽に関係なく通常どおり保持する。
+ */
+export function isAddressUnavailable(data: ReverseGeocodeResponse | undefined): boolean {
+  return data !== undefined && resolveGeocodeStatus(data) === "unavailable";
 }
 
 /**
@@ -22,6 +29,6 @@ export function useReverseGeocode(center: LatLng) {
     queryKey: ["geocode", center.lat, center.lng] as const,
     queryFn: ({ signal }) => reverseGeocode(center.lat, center.lng, signal),
     placeholderData: keepPreviousData,
-    staleTime: (query) => (isUnresolvedAddress(query.state.data) ? 0 : THIRTY_MINUTES),
+    staleTime: (query) => (isAddressUnavailable(query.state.data) ? 0 : THIRTY_MINUTES),
   });
 }

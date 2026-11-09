@@ -20,11 +20,19 @@ export type SpotSearchResponse = {
 
 export type CategoriesResponse = { items: string[] };
 
+/**
+ * found: 住所あり / not_found: 住所が無い地点（海上など。確定情報なのでキャッシュしてよい）
+ * unavailable: 外部ジオコーダの障害などで今回は取れなかった（一時的。キャッシュしない）
+ */
+export type GeocodeStatus = "found" | "not_found" | "unavailable";
+
 export type ReverseGeocodeResponse = {
   address: string | null;
   provider: "google" | "gsi";
   cached: boolean;
   gridKey: string;
+  /** 古い backend は返さないので省略可。無ければ resolveGeocodeStatus で推定する */
+  status?: GeocodeStatus;
 };
 
 export type SpotSearchParams = {

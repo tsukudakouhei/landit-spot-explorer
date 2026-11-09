@@ -102,4 +102,12 @@ describe("formatDistance", () => {
     expect(formatDistance(1000)).toBe("1.0 km");
     expect(formatDistance(1549)).toBe("1.5 km");
   });
+
+  it("m と km の境界: 丸めて 1000 m になるものは km 表記", () => {
+    expect(formatDistance(999.4)).toBe("999 m");
+    expect(formatDistance(999.5)).toBe("1.0 km");
+    expect(formatDistance(999.6)).toBe("1.0 km");
+    expect(formatDistance(1000)).toBe("1.0 km");
+    expect(formatDistance(1049)).toBe("1.0 km");
+  });
 });

@@ -29,6 +29,7 @@ export function formatGsiResponse(body: unknown): string | null {
 
 /** 国土地理院の逆ジオコーダ。API キー不要のフォールバック実装。 */
 export class GsiGeocoder implements Geocoder {
+  readonly provider = 'gsi';
   private readonly logger = new Logger(GsiGeocoder.name);
 
   constructor(private readonly fetchFn: FetchFn = (input, init) => fetch(input, init)) {}

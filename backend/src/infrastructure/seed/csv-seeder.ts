@@ -23,7 +23,7 @@ const REQUIRED_COLUMNS = ['name', 'category', 'lat', 'long', 'address'] as const
 type Column = (typeof REQUIRED_COLUMNS)[number];
 
 /** 1 行を列に分割する。ダブルクォートで囲まれた列（カンマ・"" エスケープを含む）にも対応する。 */
-function splitCsvLine(line: string): string[] {
+function splitCsvLine(line: string, lineNo: number): string[] {
   const fields: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -47,6 +47,10 @@ function splitCsvLine(line: string): string[] {
       current += char;
     }
   }
+  if (inQuotes) {
+    // 引用符内の改行は未対応（1 行 1 レコード前提）。黙って列をずらさず、行番号付きで止める
+    throw new CsvParseError(`line ${lineNo}: unclosed double quote`);
+  }
   fields.push(current);
   return fields.map((field) => field.trim());
 }
@@ -68,7 +72,7 @@ export function parseSpotsCsv(text: string): CsvSpotRow[] {
   const headerIndex = lines.findIndex((line) => line.trim() !== '');
   if (headerIndex === -1) return [];
 
-  const header = splitCsvLine(lines[headerIndex]);
+  const header = splitCsvLine(lines[headerIndex], headerIndex + 1);
   const indexOf = Object.fromEntries(
     REQUIRED_COLUMNS.map((column) => {
       const index = header.indexOf(column);
@@ -81,8 +85,9 @@ export function parseSpotsCsv(text: string): CsvSpotRow[] {
   for (let i = headerIndex + 1; i < lines.length; i++) {
     if (lines[i].trim() === '') continue;
     const lineNo = i + 1;
-    const fields = splitCsvLine(lines[i]);
-    if (fields.length < header.length) {
+    const fields = splitCsvLine(lines[i], lineNo);
+    // 多すぎる列も、引用符漏れのカンマなどで値がずれている兆候なのでエラーにする
+    if (fields.length !== header.length) {
       throw new CsvParseError(`line ${lineNo}: expected ${header.length} columns but got ${fields.length}`);
     }
     const get = (column: Column) => fields[indexOf[column]];

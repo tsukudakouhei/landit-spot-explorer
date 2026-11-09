@@ -53,6 +53,8 @@ export function resolveNextCenter(prev: LatLng, next: LatLng, decimals: number =
 
 /** 距離の表示: 1km 未満は m、以上は km（小数1位） */
 export function formatDistance(distanceM: number): string {
-  if (distanceM < 1000) return `${Math.round(distanceM)} m`;
+  // 先に m 単位で丸めてから判定する（999.6 を「1000 m」と出さない）
+  const meters = Math.round(distanceM);
+  if (meters < 1000) return `${meters} m`;
   return `${(distanceM / 1000).toFixed(1)} km`;
 }

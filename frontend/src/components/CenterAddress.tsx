@@ -3,7 +3,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { ReverseGeocodeResponse } from "@/lib/api";
 import type { LatLng } from "@/lib/geo";
-import { isUnresolvedAddress } from "@/lib/hooks/useReverseGeocode";
+import { isAddressUnavailable } from "@/lib/hooks/useReverseGeocode";
 
 type Props = {
   query: UseQueryResult<ReverseGeocodeResponse>;
@@ -49,9 +49,9 @@ export function CenterAddress({ query, center, gridDecimals }: Props) {
             }`}
           >
             {data.address ??
-              (isUnresolvedAddress(data) ? "住所を取得できませんでした" : "この地点の住所は特定できません（海上など）")}
+              (isAddressUnavailable(data) ? "住所を取得できませんでした" : "この地点の住所は特定できません（海上など）")}
             {isRefreshing && <span className="sr-only">（新しい住所を取得中）</span>}
-            {isUnresolvedAddress(data) && !isFetching && (
+            {isAddressUnavailable(data) && !isFetching && (
               <button
                 type="button"
                 onClick={() => refetch()}

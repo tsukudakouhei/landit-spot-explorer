@@ -69,7 +69,7 @@ landit-spot-explorer/
 | `GET /health` | `{ "status": "ok" }`。compose の healthcheck が使用 |
 | `GET /spots/search?lat=&lng=&radiusKm=&category=` | 中心から半径内のスポットを距離昇順で返す。`lat∈[-90,90]`、`lng∈[-180,180]`、`radiusKm∈(0,50]`、`category` は任意（完全一致）。不正値は 400 |
 | `GET /spots/categories` | カテゴリ一覧（重複なし） |
-| `GET /geocode/reverse?lat=&lng=` | 中心座標の住所。`{ address, provider: "google" \| "gsi", cached, gridKey }`。住所が特定できない地点（海上など）は `address: null` |
+| `GET /geocode/reverse?lat=&lng=` | 中心座標の住所。`{ address, provider: "google" \| "gsi", cached, gridKey, status }`。`status` は `found` / `not_found`（海上など住所が無い）/ `unavailable`（外部 API の失敗）。後ろ 2 つは `address: null` |
 
 ---
 
@@ -162,15 +162,15 @@ cd frontend && npm ci && npm run dev                                            
 ### テスト
 
 ```bash
-cd backend  && npm test     # Jest 113 件（DB 不要）: ユースケース（ポートをモック）、グリッドキー、
+cd backend  && npm test     # Jest 123 件（DB 不要）: ユースケース（ポートをモック）、グリッドキー、
                             #   Google / 国土地理院アダプタ（fetch をモック）、CSV パーサ、DTO バリデーション、
                             #   @nestjs/testing + supertest による controller の e2e
 cd backend  && npm run lint # ESLint。domain / application から @nestjs・typeorm を import すると落ちる（層の境界を機械的に強制）
-cd frontend && npm test     # Vitest 36 件: 座標の丸め・同一グリッド判定、API クライアント、
+cd frontend && npm test     # Vitest 40 件: 座標の丸め・同一グリッド判定、API クライアント、
                             #   検索中心の debounce（fake timers）、リスト由来の panTo 後の idle を捨てる判定
 ```
 
-実 PostGIS を使う統合テスト（マイグレーション → シード 2 回 → `ST_DWithin` 検索 → `geocode_cache` upsert、8 件）は、専用 DB を指定したときだけ動きます。**指定した DB のテーブルを作り直す**ため、DB 名が `_test` で終わらない場合は実行を拒否します。
+実 PostGIS を使う統合テスト（マイグレーション → シード 2 回 → `ST_DWithin` 検索 → `geocode_cache` upsert、プロバイダ切替時のキャッシュ上書き、9 件）は、専用 DB を指定したときだけ動きます。**指定した DB のテーブルを作り直す**ため、DB 名が `_test` で終わらない場合は実行を拒否します。
 
 ```bash
 docker run -d --rm --name spots-test-db -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app \
@@ -206,7 +206,7 @@ docker stop spots-test-db
 
 ### 2. 住所 API の呼び出しを「グリッド丸め + 永続キャッシュ」で抑制する
 
-- **決定**: 逆ジオは必ず api 経由。座標を小数第 3 位（緯度 約111m / 経度 約91m）に丸めた `gridKey`（例 `35.681:139.767`）をキーに `geocode_cache` テーブルを先に引き、`fetched_at` が TTL（既定 30 日）以内なら外部 API を呼ばない。応答には `cached` を含め、UI に小さく「cache」バッジを出す。Geocoder の結果は `found` / `not_found`（海上など住所が無い）/ `unavailable`（HTTP エラー・タイムアウト・キー不正）の 3 種に型で分け、**保存するのは確定した結果だけ**。`unavailable` はその場で `address: null` を返し、次のリクエストで再問い合わせする
+- **決定**: 逆ジオは必ず api 経由。座標を小数第 3 位（緯度 約111m / 経度 約91m）に丸めた `gridKey`（例 `35.681:139.767`）をキーに `geocode_cache` テーブルを先に引き、`fetched_at` が TTL（既定 30 日）以内なら外部 API を呼ばない。応答には `cached` を含め、UI に小さく「cache」バッジを出す。Geocoder の結果は `found` / `not_found`（海上など住所が無い）/ `unavailable`（HTTP エラー・タイムアウト・キー不正）の 3 種に型で分け、**保存するのは確定した結果だけ**。`unavailable` は保存せず、次のリクエストで再問い合わせする（期限切れの住所が残っていればそれを返す = stale-if-error）。キャッシュは保存時の provider が現在の Geocoder と同じときだけ有効で、キー無し（国土地理院）で溜めた住所が Google キー設定後に残り続けることはない。応答の `status` でフロントは「住所が無い」と「取得できなかった（再試行リンクを出す）」を出し分ける
 - **理由**: 「今どこを見ているか」を示す用途なら 100m 精度で十分。同じ街区を見直したときに外部 API を叩かない。メモリ内キャッシュでなく Postgres に置くことで、コンテナを再起動しても消えない。失敗を保存しないのは、外部 API の一時障害やキーの打ち間違いが 30 日間「住所なし」として残るのを防ぐため（レビューで実際に見つかった問題）。桁数・TTL は環境変数で調整できる
 
 ### 3. 微小な地図移動では再検索しない（クライアント側の二段目）
@@ -273,6 +273,9 @@ docker stop spots-test-db
 | **`/health` は DB を見ない** | プロセスが生きていれば ok を返す | `SELECT 1` を含める。ただし DB 断で api が再起動ループに入らないよう readiness と liveness を分ける |
 | **CSV パーサは簡易実装** | 引用符内の改行に非対応。今回の CSV には無い | csv-parse 等のライブラリに置き換える |
 | **API 転送は Next.js の proxy（middleware）** | 応答ヘッダ `x-middleware-rewrite` に内部の転送先（`http://api:3001/...`）が出る。api 停止時は 502 でなく本文なしの 500 になる | Route Handler（`app/api/[...path]/route.ts`）で fetch を中継し、ヘッダ・エラー応答・タイムアウトを制御する |
-| **期限切れキャッシュを障害時に使わない** | TTL 切れの住所があっても、外部 API が落ちているときは `null` を返す | stale-if-error（期限切れでも古い住所を返す）にする |
+| **検索中心もグリッドに丸める** | 再検索の抑制とキャッシュ再利用のため、半径検索の中心を逆ジオと同じ約 100m グリッドに丸めている。地図の十字（実際の中心）と検索の中心が最大約 70m ずれ、距離表示も同じだけずれる。半径円は丸めた中心に描くので「円の中 = リスト」は保たれる | 再検索の判定（グリッド）と検索に使う座標の精度を分ける。または半径に応じて丸め桁数を変える |
+| **シードは追加・更新のみ** | `name` をキーにした upsert なので、CSV から行を消したり名前を直したりしても古い行は DB に残る（`docker compose down -v` で作り直せば揃う） | CSV に無い行を削除する同期モード、または CSV に安定した ID 列を持たせる |
+| **キャッシュ用テーブルの障害が API に波及する** | `geocode_cache` の読み書きが失敗すると、外部 API から住所が取れていても 500 になる | キャッシュの失敗はログに留め、取得した住所を返す |
+| **DB 接続リトライが一律** | 起動時の接続は原因を区別せず 2 秒間隔で 30 回リトライする。パスワード間違いのような即時に分かる設定ミスでも 60 秒待つ | 接続拒否・起動中のみリトライし、認証エラーは即終了する |
 | **実キーでの地図描画は未検証の部分がある** | 開発中は Google キー無しで進めたため、マーカー・クラスタ・半径円・パンの実描画は自動テストに含まれない | Playwright + テスト用キーで地図操作の E2E を追加 |
 | **本番運用の考慮** | 本番デプロイ・CI/CD は対象外。ホスト側ポート 3000 / 3001 / 5432 は固定 | GitHub Actions で lint / test / イメージビルドを回す。ポートを環境変数で上書き可能にする |

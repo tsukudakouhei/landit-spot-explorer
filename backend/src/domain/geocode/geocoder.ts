@@ -15,6 +15,8 @@ export const GEOCODER = Symbol('GEOCODER');
 
 /** 逆ジオコーディングのポート。Google / 国土地理院などの実装を差し替えられる。 */
 export interface Geocoder {
+  /** この実装のプロバイダ。キャッシュが今の実装で取ったものかを判定するのに使う。 */
+  readonly provider: GeocodeProvider;
   /** 外部 API の失敗は例外ではなく unavailable で返す（住所は補助情報で、API 全体を 500 にしないため）。 */
   reverse(lat: number, lng: number): Promise<GeocodeResult>;
 }

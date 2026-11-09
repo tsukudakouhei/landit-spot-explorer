@@ -41,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigin: readString(env, 'CORS_ORIGIN', DEFAULTS.corsOrigin),
     googleGeocodingApiKey: env.GOOGLE_GEOCODING_API_KEY?.trim() ?? '',
     geocodeCacheTtlDays: readInteger(env, 'GEOCODE_CACHE_TTL_DAYS', DEFAULTS.geocodeCacheTtlDays, 0, 3650),
-    geocodeGridDecimals: readInteger(env, 'GEOCODE_GRID_DECIMALS', DEFAULTS.geocodeGridDecimals, 0, 10),
+    // フロントの parseGridDecimals と同じ 1〜6。食い違うと同じ地点でもキーがずれ、キャッシュが効かない
+    geocodeGridDecimals: readInteger(env, 'GEOCODE_GRID_DECIMALS', DEFAULTS.geocodeGridDecimals, 1, 6),
   };
 }

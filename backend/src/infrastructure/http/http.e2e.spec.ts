@@ -125,7 +125,7 @@ describe('HTTP API (controllers + ValidationPipe)', () => {
 
   describe('GET /geocode/reverse', () => {
     it('lat / lng を数値でユースケースに渡し、契約の形で返す', async () => {
-      const output = { address: '東京都千代田区丸の内一丁目', provider: 'gsi', cached: false, gridKey: '35.681:139.767' };
+      const output = { address: '東京都千代田区丸の内一丁目', provider: 'gsi', cached: false, gridKey: '35.681:139.767', status: 'found' };
       reverseExecute.mockResolvedValue(output);
 
       const res = await request(server).get('/geocode/reverse').query({ lat: '35.681236', lng: '139.767125' }).expect(200);
@@ -135,11 +135,11 @@ describe('HTTP API (controllers + ValidationPipe)', () => {
     });
 
     it('address が null でも 200', async () => {
-      reverseExecute.mockResolvedValue({ address: null, provider: 'google', cached: true, gridKey: '30.000:140.000' });
+      reverseExecute.mockResolvedValue({ address: null, provider: 'google', cached: true, gridKey: '30.000:140.000', status: 'not_found' });
 
       const res = await request(server).get('/geocode/reverse').query({ lat: '30', lng: '140' }).expect(200);
 
-      expect(res.body).toMatchObject({ address: null });
+      expect(res.body).toMatchObject({ address: null, status: 'not_found' });
     });
 
     it('lng が範囲外なら 400', async () => {
@@ -184,7 +184,7 @@ describe('AppModule wiring (ports overridden)', () => {
       .overrideProvider(SPOT_REPOSITORY)
       .useValue(spotRepository)
       .overrideProvider(GEOCODER)
-      .useValue({ reverse } satisfies Geocoder)
+      .useValue({ provider: 'gsi', reverse } satisfies Geocoder)
       .overrideProvider(GEOCODE_CACHE_REPOSITORY)
       .useValue({ findByGridKey, save } satisfies GeocodeCacheRepository)
       .compile();
@@ -227,7 +227,24 @@ describe('AppModule wiring (ports overridden)', () => {
     expect(findByGridKey).toHaveBeenCalledWith('35.681:139.767');
     expect(reverse).toHaveBeenCalledWith(35.681, 139.767);
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ gridKey: '35.681:139.767', address: '東京都千代田区丸の内一丁目' }));
-    expect(res.body).toEqual({ address: '東京都千代田区丸の内一丁目', provider: 'gsi', cached: false, gridKey: '35.681:139.767' });
+    expect(res.body).toEqual({
+      address: '東京都千代田区丸の内一丁目',
+      provider: 'gsi',
+      cached: false,
+      gridKey: '35.681:139.767',
+      status: 'found',
+    });
+  });
+
+  it('GET /geocode/reverse: 外部 API 失敗かつキャッシュ無しなら 200 で status:unavailable（保存しない）', async () => {
+    findByGridKey.mockResolvedValue(null);
+    reverse.mockResolvedValue({ kind: 'unavailable', provider: 'gsi', reason: 'HTTP 503' });
+    save.mockClear();
+
+    const res = await request(server).get('/geocode/reverse').query({ lat: '30', lng: '140' }).expect(200);
+
+    expect(save).not.toHaveBeenCalled();
+    expect(res.body).toEqual({ address: null, provider: 'gsi', cached: false, gridKey: '30.000:140.000', status: 'unavailable' });
   });
 
   it('GET /health と GET /spots/categories も AppModule 経由で応答する', async () => {
