@@ -110,11 +110,13 @@ Google: `https://maps.googleapis.com/maps/api/geocode/json?latlng=<lat>,<lng>&la
 ```
 frontend/src/
   app/ layout.tsx, page.tsx（Server Component: process.env.GOOGLE_MAPS_BROWSER_KEY を読み <SpotExplorer apiKey=.../> に渡す）, providers.tsx（TanStack QueryClientProvider）
-  components/ SpotExplorer.tsx（状態の親）, MapView.tsx（@vis.gl/react-google-maps + @googlemaps/markerclusterer）, SpotList.tsx, RadiusControl.tsx, CategoryFilter.tsx, CenterAddress.tsx, MapKeyMissing.tsx, EmptyState / LoadingOverlay
+  components/ SpotExplorer.tsx（状態の親）, MapView.tsx（@vis.gl/react-google-maps + @googlemaps/markerclusterer）, SpotList.tsx, RadiusControl.tsx, CategoryFilter.tsx, CenterAddress.tsx, MapKeyMissing.tsx, AreaPicker.tsx, EmptyState / LoadingOverlay, icons.tsx
   lib/ api.ts（fetch ラッパ。`/api/...`）, geo.ts（roundCoord(lat,lng,decimals=3)、同じキー判定）, hooks/ useSpotsSearch.ts, useReverseGeocode.ts（TanStack Query。queryKey は丸めた座標 + radiusKm + category）
 ```
 - 地図 `idle`（移動終了）で中心を取得 → 400ms debounce → 丸めキーが前回と同じなら何もしない
 - 初期中心: 東京駅 35.681236,139.767125、初期半径 2km、スライダー範囲 0.5〜10km（step 0.5）
 - マーカークリック → リストの該当項目をハイライト＋スクロール。リストクリック → 地図を panTo
-- 状態表示: 検索中はリスト上部にローディングバー、0件は「半径内にスポットがありません。半径を広げてください」、API エラーは再試行ボタン
-- 住所バーは地図上部に固定表示。取得中は前回住所を薄く表示（ちらつかせない）、`cached` のときは小さく「cache」バッジ
+- 「エリアへ移動」ボタン（札幌・東京・横浜・金沢・京都・奈良・大阪・那覇）で検索中心と地図を切り替えられる。キー未設定時もこのボタンで場所を変えられる（座標入力は折りたたみ内）
+- 半径はスライダー（0.5〜10km）に加えてプリセット（1 / 2 / 5 / 10 km）でも選べる
+- 状態表示: 検索中はリスト上部にローディングバー、0件は「半径内にスポットがありません」の案内と、半径を広げる / カテゴリを戻すボタン、API エラーは再試行ボタン
+- 住所バーは地図上部に固定表示。取得中は前回住所を薄く表示（ちらつかせない）、`cached` のときは小さく「キャッシュ」バッジ

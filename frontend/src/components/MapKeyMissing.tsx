@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, type FormEvent } from "react";
 import type { LatLng } from "@/lib/geo";
+import { ChevronDownIcon } from "./icons";
 
 type Props = {
   center: LatLng;
@@ -33,6 +34,14 @@ export function MapKeyMissing({ center, onSubmitCenter }: Props) {
   const [latText, setLatText] = useState(String(center.lat));
   const [lngText, setLngText] = useState(String(center.lng));
   const [errors, setErrors] = useState<FieldErrors>({});
+  // エリアボタンなど外から中心が変わったら、入力欄もその座標に合わせる（レンダー中に前回値と比べる React の定石）
+  const [shownCenter, setShownCenter] = useState(center);
+  if (shownCenter !== center) {
+    setShownCenter(center);
+    setLatText(String(center.lat));
+    setLngText(String(center.lng));
+    setErrors({});
+  }
   const latRef = useRef<HTMLInputElement>(null);
   const lngRef = useRef<HTMLInputElement>(null);
 
@@ -55,74 +64,79 @@ export function MapKeyMissing({ center, onSubmitCenter }: Props) {
       <div className="mx-auto max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold">地図を表示するには Google Maps のキーが必要です</h2>
         <p className="mt-1 text-sm text-slate-600">
-          キーが無くても、住所表示・半径・カテゴリ・リストはこのまま使えます。下の欄で検索の中心を変えられます。
+          キーが無くても、住所表示・半径・カテゴリ・リストはこのまま使えます。場所は「エリアへ移動」のボタンで変えられます。
         </p>
 
-        <form onSubmit={handleSubmit} noValidate className="mt-4">
-          <h3 className="text-sm font-semibold text-slate-800">検索の中心を座標で指定</h3>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor={`${id}-lat`} className="text-sm font-medium text-slate-700">
-                緯度
-              </label>
-              <input
-                ref={latRef}
-                id={`${id}-lat`}
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min={-90}
-                max={90}
-                value={latText}
-                onChange={(e) => {
-                  setLatText(e.target.value);
-                  setErrors((prev) => ({ ...prev, lat: undefined }));
-                }}
-                aria-invalid={errors.lat ? true : undefined}
-                aria-describedby={errors.lat ? `${id}-lat-error` : undefined}
-                className={inputClass(Boolean(errors.lat))}
-              />
-              {errors.lat && (
-                <p id={`${id}-lat-error`} className="mt-1 text-sm text-red-700">
-                  {errors.lat}
-                </p>
-              )}
+        <details className="group mt-4 rounded-lg border border-slate-200">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
+            緯度・経度で細かく指定する
+            <ChevronDownIcon className="h-5 w-5 text-slate-500 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+          </summary>
+          <form onSubmit={handleSubmit} noValidate className="border-t border-slate-200 p-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor={`${id}-lat`} className="text-sm font-medium text-slate-700">
+                  緯度
+                </label>
+                <input
+                  ref={latRef}
+                  id={`${id}-lat`}
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min={-90}
+                  max={90}
+                  value={latText}
+                  onChange={(e) => {
+                    setLatText(e.target.value);
+                    setErrors((prev) => ({ ...prev, lat: undefined }));
+                  }}
+                  aria-invalid={errors.lat ? true : undefined}
+                  aria-describedby={errors.lat ? `${id}-lat-error` : undefined}
+                  className={inputClass(Boolean(errors.lat))}
+                />
+                {errors.lat && (
+                  <p id={`${id}-lat-error`} className="mt-1 text-sm text-red-700">
+                    {errors.lat}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor={`${id}-lng`} className="text-sm font-medium text-slate-700">
+                  経度
+                </label>
+                <input
+                  ref={lngRef}
+                  id={`${id}-lng`}
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min={-180}
+                  max={180}
+                  value={lngText}
+                  onChange={(e) => {
+                    setLngText(e.target.value);
+                    setErrors((prev) => ({ ...prev, lng: undefined }));
+                  }}
+                  aria-invalid={errors.lng ? true : undefined}
+                  aria-describedby={errors.lng ? `${id}-lng-error` : undefined}
+                  className={inputClass(Boolean(errors.lng))}
+                />
+                {errors.lng && (
+                  <p id={`${id}-lng-error`} className="mt-1 text-sm text-red-700">
+                    {errors.lng}
+                  </p>
+                )}
+              </div>
             </div>
-            <div>
-              <label htmlFor={`${id}-lng`} className="text-sm font-medium text-slate-700">
-                経度
-              </label>
-              <input
-                ref={lngRef}
-                id={`${id}-lng`}
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min={-180}
-                max={180}
-                value={lngText}
-                onChange={(e) => {
-                  setLngText(e.target.value);
-                  setErrors((prev) => ({ ...prev, lng: undefined }));
-                }}
-                aria-invalid={errors.lng ? true : undefined}
-                aria-describedby={errors.lng ? `${id}-lng-error` : undefined}
-                className={inputClass(Boolean(errors.lng))}
-              />
-              {errors.lng && (
-                <p id={`${id}-lng-error`} className="mt-1 text-sm text-red-700">
-                  {errors.lng}
-                </p>
-              )}
-            </div>
-          </div>
-          <button
-            type="submit"
-            className="mt-4 inline-flex h-11 cursor-pointer items-center rounded-md bg-blue-600 px-5 text-base font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-          >
-            この地点で検索
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="mt-4 inline-flex h-11 cursor-pointer items-center rounded-lg border border-slate-300 bg-white px-5 text-base font-medium text-slate-700 hover:border-blue-400 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              この地点で検索
+            </button>
+          </form>
+        </details>
         <div className="mt-4 border-t border-slate-200 pt-4">
           <h3 className="text-sm font-semibold text-slate-800">地図を表示する手順</h3>
           <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-slate-700">

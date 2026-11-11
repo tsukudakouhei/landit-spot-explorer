@@ -2,16 +2,18 @@
 
 import { useCallback, useState } from "react";
 import type { Spot } from "@/lib/api";
+import type { Area } from "@/lib/areas";
 import { INITIAL_CENTER, type LatLng } from "@/lib/geo";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useReverseGeocode } from "@/lib/hooks/useReverseGeocode";
 import { useSearchCenter } from "@/lib/hooks/useSearchCenter";
 import { useSpotsSearch } from "@/lib/hooks/useSpotsSearch";
+import { AreaPicker } from "./AreaPicker";
 import { CategoryFilter } from "./CategoryFilter";
 import { CenterAddress } from "./CenterAddress";
 import { MapErrorBoundary } from "./MapErrorBoundary";
 import { MapKeyMissing } from "./MapKeyMissing";
-import { MapView, type Selection } from "./MapView";
+import { MapView, type Recenter, type Selection } from "./MapView";
 import { DEFAULT_RADIUS_KM, RadiusControl } from "./RadiusControl";
 import { SpotList } from "./SpotList";
 
@@ -30,7 +32,7 @@ type Props = {
  * 画面の状態の親。検索条件（中心・半径・カテゴリ）と選択中のスポットだけを持ち、
  * サーバー状態（検索結果・住所）は TanStack Query に任せる。
  *
- * 検索中心を動かすのはユーザーの地図操作（とキー未設定時の座標入力）だけ。リストクリックは選択とパンのみで再検索しない。
+ * 検索中心を動かすのはユーザーの地図操作とエリアボタン（とキー未設定時の座標入力）だけ。リストクリックは選択とパンのみで再検索しない。
  */
 export function SpotExplorer({ apiKey, gridDecimals }: Props) {
   const { center, propose, commit } = useSearchCenter(INITIAL_CENTER, gridDecimals);
@@ -38,6 +40,8 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
   const searchRadiusKm = useDebouncedValue(radiusKm, RADIUS_DEBOUNCE_MS);
   const [category, setCategory] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  /** エリアボタンによる地図の移動要求。同じエリアを押し直しても動くよう連番を持つ */
+  const [recenter, setRecenter] = useState<Recenter | null>(null);
 
   const spotsQuery = useSpotsSearch(center, searchRadiusKm, category);
   const geocodeQuery = useReverseGeocode(center);
@@ -52,6 +56,17 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
   }, []);
 
   const handleCenterIdle = useCallback((next: LatLng) => propose(next), [propose]);
+  const clearCategory = useCallback(() => setCategory(null), []);
+
+  const moveToArea = useCallback(
+    (area: Area) => {
+      // 検索は地図の移動完了を待たずに始める。地図側は移動後の idle で同じグリッドを提案するだけなので二重検索にならない
+      commit(area.center);
+      setSelection(null);
+      setRecenter((prev) => ({ center: area.center, seq: (prev?.seq ?? 0) + 1 }));
+    },
+    [commit],
+  );
 
   const hasMap = apiKey !== "";
 
@@ -72,6 +87,7 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
                 radiusKm={radiusKm}
                 spots={spots}
                 selection={selection}
+                recenter={recenter}
                 onCenterIdle={handleCenterIdle}
                 onMarkerSelect={selectFromMap}
               />
@@ -83,8 +99,9 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
       </section>
 
       <aside className="flex flex-col border-t border-slate-200 bg-white lg:h-full lg:w-[35%] lg:border-t-0 lg:border-l">
-        <div className="space-y-4 border-b border-slate-200 p-4">
+        <div className="space-y-4 border-b border-slate-200 bg-slate-50 p-4">
           <h2 className="sr-only">検索条件</h2>
+          <AreaPicker center={center} gridDecimals={gridDecimals} onSelect={moveToArea} />
           <RadiusControl value={radiusKm} onChange={setRadiusKm} />
           <CategoryFilter value={category} onChange={setCategory} />
         </div>
@@ -93,6 +110,10 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
           spots={spots}
           selection={selection}
           onSelect={selectFromList}
+          radiusKm={radiusKm}
+          category={category}
+          onChangeRadius={setRadiusKm}
+          onClearCategory={clearCategory}
         />
       </aside>
     </main>

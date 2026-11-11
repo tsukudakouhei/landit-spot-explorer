@@ -14,6 +14,12 @@ export type Selection = {
   position: LatLng;
 };
 
+/** エリアボタンなどによる「この地点へ地図を移動して」という要求。seq が変わるたびに 1 回動かす */
+export type Recenter = {
+  center: LatLng;
+  seq: number;
+};
+
 /** AdvancedMarkerElement には Map ID が必須。Google が開発用に用意しているデモ ID を使う */
 const MAP_ID = "DEMO_MAP_ID";
 /** 半径 2km の円がおおよそ収まるズーム */
@@ -34,12 +40,22 @@ type Props = {
   radiusKm: number;
   spots: Spot[];
   selection: Selection | null;
+  recenter: Recenter | null;
   /** 地図の移動が止まるたび（idle）に、生の中心座標で呼ばれる。debounce / 丸めは呼び出し側の責務 */
   onCenterIdle: (center: LatLng) => void;
   onMarkerSelect: (spot: Spot) => void;
 };
 
-export function MapView({ apiKey, searchCenter, radiusKm, spots, selection, onCenterIdle, onMarkerSelect }: Props) {
+export function MapView({
+  apiKey,
+  searchCenter,
+  radiusKm,
+  spots,
+  selection,
+  recenter,
+  onCenterIdle,
+  onMarkerSelect,
+}: Props) {
   /**
    * リスト由来の panTo が終わったときの idle を 1 回だけ捨てるゲート。
    * これが無いと panTo → idle → 中心変更 → 再検索で、押した項目が並び替わったり半径外の項目が消えたりする。
@@ -82,10 +98,13 @@ export function MapView({ apiKey, searchCenter, radiusKm, spots, selection, onCe
         />
         <ClusteredSpotMarkers spots={spots} selectedId={selection?.id ?? null} onSelect={onMarkerSelect} />
         <PanToListSelection selection={selection} idleGate={idleGate} />
+        <MoveToRecenter recenter={recenter} idleGate={idleGate} />
       </Map>
       {/* 地図の中心（＝次に検索される地点）の目印 */}
       <div aria-hidden="true" className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-        <div className="h-5 w-5 rounded-full border-2 border-slate-800/70 bg-white/40" />
+        <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-600/20 shadow ring-2 ring-blue-700">
+          <div className="h-2 w-2 rounded-full bg-blue-700" />
+        </div>
       </div>
     </APIProvider>
   );
@@ -110,6 +129,25 @@ function PanToListSelection({
     if (willMove) idleGate.expectProgrammaticMove();
     map.panTo(selection.position);
   }, [map, selection, idleGate]);
+
+  return null;
+}
+
+/**
+ * エリアボタンで選ばれた地点へ地図を移動する。
+ * 離れた都市へ飛ぶので、アニメーションする panTo ではなく setCenter で即座に切り替える。
+ * 検索中心は呼び出し側が先に確定済み。移動後の idle は同じグリッドを提案するだけなので、ゲートは開けておく。
+ */
+function MoveToRecenter({ recenter, idleGate }: { recenter: Recenter | null; idleGate: IdleGate }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !recenter) return;
+    // 直前のリスト選択で立てた「次の idle を捨てる」予約が残っていても、この移動には持ち越さない
+    idleGate.userGesture();
+    map.setCenter(recenter.center);
+    map.setZoom(DEFAULT_ZOOM);
+  }, [map, recenter, idleGate]);
 
   return null;
 }
