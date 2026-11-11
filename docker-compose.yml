@@ -1,0 +1,80 @@
+# landit-spot-explorer
+#   docker compose up --build   → http://localhost:3000
+#
+# .env が無くても既定値で起動する（env_file は使わない。ルートの .env は compose が
+# 変数展開用に自動で読む）。Google キーは既定で空 = 地図は案内パネル、住所は国土地理院。
+
+name: landit-spot-explorer
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-spots}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ でエスケープし、コンテナ内の環境変数で評価する
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # コンテナ間通信なのでホスト名は常に db。.env の DATABASE_URL（ローカル開発用の
+      # @localhost）がコンテナに入らないよう、POSTGRES_* から組み立てる
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-spots}
+      # healthcheck・web の API_URL と揃えるためコンテナ内ポートは 3001 で固定
+      PORT: "3001"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      GOOGLE_GEOCODING_API_KEY: ${GOOGLE_GEOCODING_API_KEY:-}
+      GEOCODE_CACHE_TTL_DAYS: ${GEOCODE_CACHE_TTL_DAYS:-30}
+      GEOCODE_GRID_DECIMALS: ${GEOCODE_GRID_DECIMALS:-3}
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # node:22-alpine には curl が無いので busybox の wget を使う。localhost は ::1 に解決されうるので 127.0.0.1 を明示
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # 起動時に migration → seed を実行するため猶予を取る
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      # サーバー側のみが使う転送先（src/proxy.ts がリクエストごとに読む）。ブラウザは同一オリジンの /api/... を叩く
+      API_URL: http://api:3001
+      # 実行時に Server Component が読む（NEXT_PUBLIC_ は使わない＝再ビルド不要）
+      GOOGLE_MAPS_BROWSER_KEY: ${GOOGLE_MAPS_BROWSER_KEY:-}
+      # フロントの座標丸め桁数。api の GEOCODE_GRID_DECIMALS と同じ値を渡す（キャッシュ粒度を揃える）
+      GEOCODE_GRID_DECIMALS: ${GEOCODE_GRID_DECIMALS:-3}
+      # standalone の server.js を全インターフェースで待ち受けさせる
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

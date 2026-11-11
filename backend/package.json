@@ -1,0 +1,49 @@
+{
+  "name": "landit-spot-explorer-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Spot search & reverse geocoding API (NestJS + TypeORM + PostGIS, clean architecture)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "node --watch -r ts-node/register src/main.ts",
+    "start:prod": "sh ./docker-entrypoint.sh",
+    "migration:run": "ts-node src/infrastructure/cli/migrate.ts",
+    "seed": "ts-node src/infrastructure/cli/seed.ts",
+    "test": "jest",
+    "test:integration": "node -e \"if(!process.env.TEST_DATABASE_URL){console.error('TEST_DATABASE_URL is required (e.g. postgres://app:app@localhost:5432/spots_test)');process.exit(1)}\" && jest --runInBand --testPathIgnorePatterns=/node_modules/ --testPathPattern integration",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.8",
+    "@nestjs/core": "^11.2.8",
+    "@nestjs/platform-express": "^11.2.8",
+    "@nestjs/typeorm": "^11.0.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.31"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@nestjs/testing": "^11.2.8",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0",
+    "jest": "^29.7.0",
+    "supertest": "^7.3.2",
+    "ts-jest": "^29.4.15",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.8",
+    "typescript-eslint": "^8.72.1"
+  }
+}

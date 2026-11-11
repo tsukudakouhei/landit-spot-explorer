@@ -27,7 +27,7 @@ Node 22（Docker は node:22-alpine）、パッケージマネージャは npm�
 - `CORS_ORIGIN` 既定 `http://localhost:3000`
 - `GOOGLE_GEOCODING_API_KEY` 任意。空なら国土地理院（GSI）ジオコーダに自動フォールバック
 - `GEOCODE_CACHE_TTL_DAYS` 既定 30
-- `GEOCODE_GRID_DECIMALS` 既定 3（小数第3位に丸め ≒ 100m グリッド）
+- `GEOCODE_GRID_DECIMALS` 既定 3（小数第3位に丸め ≒ 100m グリッド）。1〜6 の整数。api と web の両方が読む
 ### web
 - `API_URL` サーバー側のみ。既定 `http://api:3001`（ローカル開発は `http://localhost:3001`）。`src/proxy.ts`（Next 16 の middleware 相当）がリクエストごとに `process.env.API_URL` を読み `/api/:path*` → `${API_URL}/:path*` に転送する（next.config の `rewrites()` はビルド時に standalone へ焼き込まれ実行時に変えられないため不採用。ブラウザは常に同一オリジン `/api/...` を叩く。CORS 不要）
 - `GOOGLE_MAPS_BROWSER_KEY` サーバーコンポーネントが実行時に `process.env` から読み、クライアントコンポーネントへ props で渡す（`NEXT_PUBLIC_` は使わない＝ビルド時固定にしない）。空ならマップの代わりに「キー未設定」の案内パネルを出し、リスト・住所表示は動かす
@@ -50,9 +50,12 @@ Node 22（Docker は node:22-alpine）、パッケージマネージャは npm�
 ### `GET /geocode/reverse?lat=<number>&lng=<number>`
 - 応答 `200`:
 ```json
-{ "address": "東京都千代田区丸の内1丁目", "provider": "google" | "gsi", "cached": true, "gridKey": "35.681:139.767" }
+{ "address": "東京都千代田区丸の内1丁目", "provider": "google" | "gsi", "cached": true, "gridKey": "35.681:139.767",
+  "status": "found" | "not_found" | "unavailable" }
 ```
 - 住所が特定できない（海上など）場合は `address: null`、200 で返す。provider はその結果を取得した実装（キャッシュヒット時は保存時の provider）。外部 API の失敗（HTTP エラー・タイムアウト・REQUEST_DENIED）は保存せず、その場で `address: null, cached: false` を返す
+- `status`: `found`（住所あり）/ `not_found`（海上など住所が無い。保存する）/ `unavailable`（外部 API 失敗。保存しない）
+- キャッシュが有効なのは「TTL 内 かつ 保存時の provider が現在の Geocoder と同じ」とき。取り直しが unavailable で、期限切れまたは別 provider の行が残っていればその住所を `cached: true` で返す（stale-if-error）
 - 処理: 座標を `GEOCODE_GRID_DECIMALS` 桁に丸め `gridKey = "<lat>:<lng>"` → `geocode_cache` を見る（fetched_at が TTL 内なら cached:true で返す）→ 無ければ Geocoder ポートを呼び、結果を upsert して cached:false で返す
 
 ## DB スキーマ（TypeORM migration。生 SQL 可）
@@ -107,11 +110,13 @@ Google: `https://maps.googleapis.com/maps/api/geocode/json?latlng=<lat>,<lng>&la
 ```
 frontend/src/
   app/ layout.tsx, page.tsx（Server Component: process.env.GOOGLE_MAPS_BROWSER_KEY を読み <SpotExplorer apiKey=.../> に渡す）, providers.tsx（TanStack QueryClientProvider）
-  components/ SpotExplorer.tsx（状態の親）, MapView.tsx（@vis.gl/react-google-maps + @googlemaps/markerclusterer）, SpotList.tsx, RadiusControl.tsx, CategoryFilter.tsx, CenterAddress.tsx, MapKeyMissing.tsx, EmptyState / LoadingOverlay
+  components/ SpotExplorer.tsx（状態の親）, MapView.tsx（@vis.gl/react-google-maps + @googlemaps/markerclusterer）, SpotList.tsx, RadiusControl.tsx, CategoryFilter.tsx, CenterAddress.tsx, MapKeyMissing.tsx, AreaPicker.tsx, EmptyState / LoadingOverlay, icons.tsx
   lib/ api.ts（fetch ラッパ。`/api/...`）, geo.ts（roundCoord(lat,lng,decimals=3)、同じキー判定）, hooks/ useSpotsSearch.ts, useReverseGeocode.ts（TanStack Query。queryKey は丸めた座標 + radiusKm + category）
 ```
 - 地図 `idle`（移動終了）で中心を取得 → 400ms debounce → 丸めキーが前回と同じなら何もしない
 - 初期中心: 東京駅 35.681236,139.767125、初期半径 2km、スライダー範囲 0.5〜10km（step 0.5）
 - マーカークリック → リストの該当項目をハイライト＋スクロール。リストクリック → 地図を panTo
-- 状態表示: 検索中はリスト上部にローディングバー、0件は「半径内にスポットがありません。半径を広げてください」、API エラーは再試行ボタン
-- 住所バーは地図上部に固定表示。取得中は前回住所を薄く表示（ちらつかせない）、`cached` のときは小さく「cache」バッジ
+- 「エリアへ移動」ボタン（札幌・東京・横浜・金沢・京都・奈良・大阪・那覇）で検索中心と地図を切り替えられる。キー未設定時もこのボタンで場所を変えられる（座標入力は折りたたみ内）
+- 半径はスライダー（0.5〜10km）に加えてプリセット（1 / 2 / 5 / 10 km）でも選べる
+- 状態表示: 検索中はリスト上部にローディングバー、0件は「半径内にスポットがありません」の案内と、半径を広げる / カテゴリを戻すボタン、API エラーは再試行ボタン
+- 住所バーは地図上部に固定表示。取得中は前回住所を薄く表示（ちらつかせない）、`cached` のときは小さく「キャッシュ」バッジ
