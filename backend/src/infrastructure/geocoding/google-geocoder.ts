@@ -11,6 +11,10 @@ export function stripCountryAndPostalCode(formattedAddress: string): string {
   return formattedAddress.replace(COUNTRY_AND_POSTAL_PREFIX, '').trim();
 }
 
+function isPlusCodeOnly(result: Record<string, unknown>): boolean {
+  return Array.isArray(result.types) && result.types.length > 0 && result.types.every((t) => t === 'plus_code');
+}
+
 /** Geocoding API のレスポンス本文を結果に変換する。 */
 export function parseGoogleResponse(body: unknown): GeocodeResult {
   if (!isRecord(body) || typeof body.status !== 'string') {
@@ -23,7 +27,10 @@ export function parseGoogleResponse(body: unknown): GeocodeResult {
     return { kind: 'unavailable', provider: 'google', reason: `status ${body.status}${detail}` };
   }
 
-  const first: unknown = Array.isArray(body.results) ? body.results[0] : undefined;
+  // 海上などでは status が OK でも、住所ではなく Plus Code（例 "8Q6XGV2X+2X"）だけの結果が返る。
+  // 人が読める住所ではないので、Plus Code 以外で最初の結果を使う
+  const results: unknown[] = Array.isArray(body.results) ? body.results : [];
+  const first = results.find((r) => isRecord(r) && !isPlusCodeOnly(r));
   if (!isRecord(first) || typeof first.formatted_address !== 'string') {
     return { kind: 'not_found', provider: 'google' };
   }
