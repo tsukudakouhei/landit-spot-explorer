@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { NewSpot, SpotWithDistance } from '../../../../domain/spot/spot.entity';
+import { NewSpot, Spot, SpotWithDistance } from '../../../../domain/spot/spot.entity';
 import { SpotRepository, SpotSearchCriteria, UpsertResult } from '../../../../domain/spot/spot.repository';
 import { readBoolean, readNumber, readString, toRows } from './row-parsers';
 
@@ -18,6 +18,8 @@ const SEARCH_SQL = `
      AND ($4::text IS NULL OR s.category = $4::text)
    ORDER BY distance_m ASC, s.name ASC
 `;
+
+const ALL_SQL = 'SELECT id, name, category, address, lat, lng FROM spots ORDER BY name ASC';
 
 const CATEGORIES_SQL = 'SELECT DISTINCT category FROM spots ORDER BY category ASC';
 
@@ -42,6 +44,18 @@ export class TypeOrmSpotRepository implements SpotRepository {
       lat: readNumber(row, 'lat'),
       lng: readNumber(row, 'lng'),
       distanceM: readNumber(row, 'distance_m'),
+    }));
+  }
+
+  async findAll(): Promise<Spot[]> {
+    const result: unknown = await this.dataSource.query(ALL_SQL);
+    return toRows(result).map((row) => ({
+      id: readString(row, 'id'),
+      name: readString(row, 'name'),
+      category: readString(row, 'category'),
+      address: readString(row, 'address'),
+      lat: readNumber(row, 'lat'),
+      lng: readNumber(row, 'lng'),
     }));
   }
 

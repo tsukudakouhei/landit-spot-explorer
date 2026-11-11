@@ -110,6 +110,21 @@ describe('TypeORM + PostGIS integration', () => {
     expect(await countSpots(dataSource)).toBe(200);
   });
 
+  it('全件取得: 200 件を重複なしで返す', async () => {
+    const all = await spots.findAll();
+
+    expect(all).toHaveLength(200);
+    expect(new Set(all.map((s) => s.id)).size).toBe(200);
+    expect(all[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String) as unknown,
+        category: expect.any(String) as unknown,
+        lat: expect.any(Number) as unknown,
+        lng: expect.any(Number) as unknown,
+      }),
+    );
+  });
+
   it('カテゴリ一覧: 重複なしで 14 種を返す', async () => {
     const categories = await spots.listCategories();
 

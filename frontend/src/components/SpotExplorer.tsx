@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import type { Spot } from "@/lib/api";
+import { useCallback, useMemo, useState } from "react";
+import type { MapSpot, Spot } from "@/lib/api";
 import type { Area } from "@/lib/areas";
 import { INITIAL_CENTER, type LatLng } from "@/lib/geo";
+import { useAllSpots } from "@/lib/hooks/useAllSpots";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useReverseGeocode } from "@/lib/hooks/useReverseGeocode";
 import { useSearchCenter } from "@/lib/hooks/useSearchCenter";
@@ -48,9 +49,30 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
   const areaCounts = useAreaCounts(searchRadiusKm, category, gridDecimals);
   const spots = spotsQuery.data?.items ?? NO_SPOTS;
 
-  const selectFromMap = useCallback((spot: Spot) => {
-    setSelection({ id: spot.id, source: "map", position: { lat: spot.lat, lng: spot.lng } });
-  }, []);
+  /** 半径内（＝リストに出ている）スポットの id。地図ではこれを濃いピン、それ以外を薄いピンにする */
+  const activeIds = useMemo(() => new Set(spots.map((s) => s.id)), [spots]);
+  /**
+   * 地図に出すスポット。全件が取れていれば全件（カテゴリで絞り込み中はそのカテゴリだけ）、
+   * 取れていなければ半径内の検索結果だけを出す（全件取得の失敗で地図が空にならないようにする）。
+   */
+  const allSpots = useAllSpots().data?.items;
+  const mapSpots: MapSpot[] = useMemo(() => {
+    if (!allSpots) return spots;
+    return category === null ? allSpots : allSpots.filter((s) => s.category === category);
+  }, [allSpots, spots, category]);
+
+  const selectFromMap = useCallback(
+    (spot: MapSpot) => {
+      const position = { lat: spot.lat, lng: spot.lng };
+      // 半径の外にある薄いピンを押したら、そのスポットを新しい検索中心にする（検索後にリストへ現れて選択中になる）
+      if (!activeIds.has(spot.id)) {
+        commit(position);
+        setRecenter((prev) => ({ center: position, seq: (prev?.seq ?? 0) + 1 }));
+      }
+      setSelection({ id: spot.id, source: "map", position });
+    },
+    [activeIds, commit],
+  );
 
   const selectFromList = useCallback((spot: Spot) => {
     setSelection({ id: spot.id, source: "list", position: { lat: spot.lat, lng: spot.lng } });
@@ -87,7 +109,8 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
                 searchCenter={center}
                 radiusKm={radiusKm}
                 fitRadiusKm={searchRadiusKm}
-                spots={spots}
+                spots={mapSpots}
+                activeIds={activeIds}
                 selection={selection}
                 recenter={recenter}
                 onCenterIdle={handleCenterIdle}
@@ -106,7 +129,7 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
           <AreaPicker
             center={center}
             gridDecimals={gridDecimals}
-            counts={category === null ? null : areaCounts}
+            counts={areaCounts}
             onSelect={moveToArea}
           />
           <RadiusControl value={radiusKm} onChange={setRadiusKm} />

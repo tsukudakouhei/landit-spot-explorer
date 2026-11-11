@@ -28,20 +28,19 @@ export function useSpotsSearch(center: LatLng, radiusKm: number, category: strin
 }
 
 /**
- * カテゴリで絞り込んでいる間だけ、各エリアの件数を調べる（エリア id → 件数。取得中のエリアは入らない）。
- * 「このカテゴリはどのエリアにあるか」を、エリアを 1 つずつ開かなくても分かるようにするため。
+ * 今の半径・カテゴリで、各エリアに何件あるかを調べる（エリア id → 件数。取得中のエリアは入らない）。
+ * スポットは全国に散らばっているので、「どのエリアに何件あるか」をエリアを 1 つずつ開かなくても分かるようにするため。
  * 既存の半径検索をエリアの数だけ呼ぶ。キーが画面の検索と同じなので、そのエリアへ移動したときは通信せずに表示できる。
  */
 export function useAreaCounts(radiusKm: number, category: string | null, gridDecimals: number): Record<string, number> {
   return useQueries({
-    queries: AREAS.map((area) => ({
-      ...spotsSearchOptions(roundCoord(area.center.lat, area.center.lng, gridDecimals), radiusKm, category),
-      enabled: category !== null,
-    })),
+    queries: AREAS.map((area) =>
+      spotsSearchOptions(roundCoord(area.center.lat, area.center.lng, gridDecimals), radiusKm, category),
+    ),
     combine: (results) => {
       const counts: Record<string, number> = {};
       results.forEach((result, i) => {
-        if (category !== null && result.data) counts[AREAS[i].id] = result.data.items.length;
+        if (result.data) counts[AREAS[i].id] = result.data.items.length;
       });
       return counts;
     },

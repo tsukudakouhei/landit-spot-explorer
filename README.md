@@ -68,6 +68,7 @@ landit-spot-explorer/
 |---|---|
 | `GET /health` | `{ "status": "ok" }`。compose の healthcheck が使用 |
 | `GET /spots/search?lat=&lng=&radiusKm=&category=` | 中心から半径内のスポットを距離昇順で返す。`lat∈[-90,90]`、`lng∈[-180,180]`、`radiusKm∈(0,50]`、`category` は任意（完全一致）。不正値は 400 |
+| `GET /spots` | 全スポット（地図に全体を薄いピンで表示するために使う）。`{ items, total }` |
 | `GET /spots/categories` | カテゴリ一覧（重複なし） |
 | `GET /geocode/reverse?lat=&lng=` | 中心座標の住所。`{ address, provider: "google" \| "gsi", cached, gridKey, status }`。`status` は `found` / `not_found`（海上など住所が無い）/ `unavailable`（外部 API の失敗）。後ろ 2 つは `address: null` |
 
@@ -162,7 +163,7 @@ cd frontend && npm ci && npm run dev                                            
 ### テスト
 
 ```bash
-cd backend  && npm test     # Jest 125 件（DB 不要）: ユースケース（ポートをモック）、グリッドキー、
+cd backend  && npm test     # Jest 127 件（DB 不要）: ユースケース（ポートをモック）、グリッドキー、
                             #   Google / 国土地理院アダプタ（fetch をモック）、CSV パーサ、DTO バリデーション、
                             #   @nestjs/testing + supertest による controller の e2e
 cd backend  && npm run lint # ESLint。domain / application から @nestjs・typeorm を import すると落ちる（層の境界を機械的に強制）
@@ -170,7 +171,7 @@ cd frontend && npm test     # Vitest 53 件: 座標の丸め・同一グリッ�
                             #   検索中心の debounce（fake timers）、リスト由来の panTo 後の idle を捨てる判定
 ```
 
-実 PostGIS を使う統合テスト（マイグレーション → シード 2 回 → `ST_DWithin` 検索 → `geocode_cache` upsert、プロバイダ切替時のキャッシュ上書き、9 件）は、専用 DB を指定したときだけ動きます。**指定した DB のテーブルを作り直す**ため、DB 名が `_test` で終わらない場合は実行を拒否します。
+実 PostGIS を使う統合テスト（マイグレーション → シード 2 回 → `ST_DWithin` 検索 → `geocode_cache` upsert、プロバイダ切替時のキャッシュ上書き、10 件）は、専用 DB を指定したときだけ動きます。**指定した DB のテーブルを作り直す**ため、DB 名が `_test` で終わらない場合は実行を拒否します。
 
 ```bash
 docker run -d --rm --name spots-test-db -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app \
@@ -218,8 +219,8 @@ docker stop spots-test-db
 | 簡略化した点 | 現状 | 今後の改善 |
 |---|---|---|
 | **検索は半径のみ** | 地図に見えている範囲ではなく、中心からの半径で検索している | 表示範囲で検索するエンドポイントを追加し、切り替えられるようにする |
-| **ページング無し** | 200 件規模を前提に、半径内の全件を一度に返している | 件数の上限とページングを入れる |
-| **地名での検索無し** | 離れた場所へは、地図を動かすか 8 エリアのボタンで移動する。カテゴリで絞り込むと各エリアの件数は出るが、8 エリアの外にあるスポットは探せない | 地名から座標を引く検索ボックスと、「最も近い該当スポットへ移動」の案内を追加する |
+| **全スポットを一度に取得** | 地図には半径の外のスポットも薄いピンで出しており、そのために 200 件すべてを 1 回で取得している。半径検索もページング無しで全件を返す | 件数が増えたら、地図に見えている範囲のスポットだけを取得する方式に変える。リストにはページングを入れる |
+| **地名での検索無し** | 離れた場所へは、地図を引いてピンを選ぶか、8 エリアのボタンで移動する。地名を入力して探すことはできない | 地名から座標を引く検索ボックスを追加する |
 | **キー無しでは地図が出ない** | Google のキーが無い場合、リスト・半径検索・住所表示は動くが地図は表示されない。住所は国土地理院から取得し、首都圏以外では町名だけになる | キー無しのときは別の地図ライブラリ（MapLibre + 地理院タイル）で表示する |
 | **地図操作の自動テスト無し** | 地図の操作は実キーを使って手動で確認した。自動テストは API とロジック部分のみ | Playwright でブラウザ操作のテストを追加する |
 | **認証・利用制限無し** | API は誰でも呼べる。外部 API を呼ぶ住所取得にも回数制限が無い | 認証と、IP ごとの回数制限を入れる |

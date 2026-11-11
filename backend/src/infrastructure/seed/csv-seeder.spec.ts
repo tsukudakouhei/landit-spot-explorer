@@ -66,7 +66,12 @@ describe('CsvSeeder', () => {
     const upsertByName = jest
       .fn<Promise<UpsertResult>, [readonly NewSpot[]]>()
       .mockImplementation((spots) => Promise.resolve({ inserted: spots.length, updated: 0, unchanged: 0 }));
-    const repository: SpotRepository = { findWithinRadius: jest.fn(), listCategories: jest.fn(), upsertByName };
+    const repository: SpotRepository = {
+      findWithinRadius: jest.fn(),
+      findAll: jest.fn(),
+      listCategories: jest.fn(),
+      upsertByName,
+    };
     return { repository, upsertByName };
   }
 

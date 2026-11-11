@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ListCategoriesOutput, ListCategoriesUseCase } from '../../application/list-categories.usecase';
+import { ListSpotsOutput, ListSpotsUseCase } from '../../application/list-spots.usecase';
 import { SearchSpotsOutput, SearchSpotsUseCase } from '../../application/search-spots.usecase';
 import { SearchSpotsQueryDto } from './dto/search-spots.query.dto';
 
@@ -8,8 +9,15 @@ import { SearchSpotsQueryDto } from './dto/search-spots.query.dto';
 export class SpotsController {
   constructor(
     private readonly searchSpots: SearchSpotsUseCase,
+    private readonly listSpots: ListSpotsUseCase,
     private readonly listCategories: ListCategoriesUseCase,
   ) {}
+
+  /** 全スポット。地図に全体を表示するために使う。 */
+  @Get()
+  list(): Promise<ListSpotsOutput> {
+    return this.listSpots.execute();
+  }
 
   @Get('search')
   search(@Query() query: SearchSpotsQueryDto): Promise<SearchSpotsOutput> {

@@ -7,15 +7,15 @@ type Props = {
   /** 丸めた検索中心。エリアの代表地点と同じグリッドなら、そのボタンを選択中にする */
   center: LatLng;
   gridDecimals: number;
-  /** カテゴリで絞り込んでいるときの、エリアごとの件数（エリア id → 件数）。絞り込んでいなければ null */
-  counts: Record<string, number> | null;
+  /** 今の半径・カテゴリでの、エリアごとの件数（エリア id → 件数）。取得中のエリアは含まれない */
+  counts: Record<string, number>;
   onSelect: (area: Area) => void;
 };
 
 /**
  * 主要エリアへワンタップで移動するボタン。
  * 緯度経度を知らなくても、また地図を長く動かさなくても、離れた場所のスポットを探せるようにする。
- * カテゴリで絞り込んでいる間は各ボタンに件数を出し、どのエリアに対象があるかを移動する前に分かるようにする。
+ * 各ボタンに今の半径・カテゴリでの件数を出し、どのエリアに対象があるかを移動する前に分かるようにする。
  */
 export function AreaPicker({ center, gridDecimals, counts, onSelect }: Props) {
   return (
@@ -26,7 +26,7 @@ export function AreaPicker({ center, gridDecimals, counts, onSelect }: Props) {
       <div className="mt-1 grid grid-cols-4 gap-2">
         {AREAS.map((area) => {
           const active = isSameGrid(center, area.center, gridDecimals);
-          const count = counts?.[area.id];
+          const count = counts[area.id];
           const empty = count === 0;
           return (
             <button

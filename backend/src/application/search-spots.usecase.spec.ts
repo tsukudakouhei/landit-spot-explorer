@@ -6,6 +6,7 @@ function buildRepository(found: SpotWithDistance[]) {
   const findWithinRadius = jest.fn<Promise<SpotWithDistance[]>, [SpotSearchCriteria]>().mockResolvedValue(found);
   const repository: SpotRepository = {
     findWithinRadius,
+    findAll: jest.fn(),
     listCategories: jest.fn<Promise<string[]>, []>(),
     upsertByName: jest.fn<Promise<UpsertResult>, []>(),
   };
