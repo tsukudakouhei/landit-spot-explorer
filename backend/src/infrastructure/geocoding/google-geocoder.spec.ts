@@ -65,6 +65,32 @@ describe('GoogleGeocoder', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(status));
   });
 
+  it('Plus Code だけの結果（海上など）は住所として扱わず not_found', async () => {
+    const fetchFn = mockFetch(
+      jsonResponse({ status: 'OK', results: [{ formatted_address: '8Q6XGV2X+2X', types: ['plus_code'] }] }),
+    );
+
+    const result = await new GoogleGeocoder('test-key', fetchFn).reverse(34.5, 139.9);
+
+    expect(result).toEqual({ kind: 'not_found', provider: 'google' });
+  });
+
+  it('先頭が Plus Code でも、後ろに住所の結果があればそれを使う', async () => {
+    const fetchFn = mockFetch(
+      jsonResponse({
+        status: 'OK',
+        results: [
+          { formatted_address: '8Q7XMQJ8+FR', types: ['plus_code'] },
+          { formatted_address: '日本、〒100-0005 東京都千代田区丸の内１丁目', types: ['sublocality'] },
+        ],
+      }),
+    );
+
+    const result = await new GoogleGeocoder('test-key', fetchFn).reverse(35.681, 139.767);
+
+    expect(result).toEqual({ kind: 'found', address: '東京都千代田区丸の内１丁目', provider: 'google' });
+  });
+
   it('HTTP 500 はログして unavailable。ログに API キーを含めない', async () => {
     const fetchFn = mockFetch(jsonResponse({}, 500));
 
