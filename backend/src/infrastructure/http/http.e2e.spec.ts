@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { Server } from 'node:http';
 import request from 'supertest';
 import { ListCategoriesUseCase } from '../../application/list-categories.usecase';
+import { ListSpotsUseCase } from '../../application/list-spots.usecase';
 import { ReverseGeocodeUseCase } from '../../application/reverse-geocode.usecase';
 import { SearchSpotsUseCase } from '../../application/search-spots.usecase';
 import { GEOCODE_CACHE_REPOSITORY, GeocodeCacheRepository } from '../../domain/geocode/geocode-cache.repository';
@@ -23,6 +24,7 @@ describe('HTTP API (controllers + ValidationPipe)', () => {
   const CORS_ORIGIN = 'http://localhost:3000';
   const searchExecute = jest.fn();
   const categoriesExecute = jest.fn();
+  const listExecute = jest.fn();
   const reverseExecute = jest.fn();
   let app: INestApplication;
   let server: Server;
@@ -33,6 +35,7 @@ describe('HTTP API (controllers + ValidationPipe)', () => {
       providers: [
         { provide: SearchSpotsUseCase, useValue: { execute: searchExecute } },
         { provide: ListCategoriesUseCase, useValue: { execute: categoriesExecute } },
+        { provide: ListSpotsUseCase, useValue: { execute: listExecute } },
         { provide: ReverseGeocodeUseCase, useValue: { execute: reverseExecute } },
       ],
     }).compile();
@@ -50,7 +53,20 @@ describe('HTTP API (controllers + ValidationPipe)', () => {
   beforeEach(() => {
     searchExecute.mockReset();
     categoriesExecute.mockReset();
+    listExecute.mockReset();
     reverseExecute.mockReset();
+  });
+
+  it('GET /spots → 200 で全スポットを返す', async () => {
+    const body = {
+      items: [{ id: '1', name: '東京駅', category: '交通機関', address: '東京都千代田区', lat: 35.681, lng: 139.767 }],
+      total: 1,
+    };
+    listExecute.mockResolvedValue(body);
+
+    const res = await request(server).get('/spots').expect(200);
+
+    expect(res.body).toEqual(body);
   });
 
   it('GET /health → 200 { status: "ok" }', async () => {
@@ -175,6 +191,7 @@ describe('AppModule wiring (ports overridden)', () => {
   beforeAll(async () => {
     const spotRepository: SpotRepository = {
       findWithinRadius,
+      findAll: jest.fn().mockResolvedValue([]),
       listCategories: jest.fn().mockResolvedValue(['交通機関']),
       upsertByName: jest.fn(),
     };

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  buildAllSpotsUrl,
   buildCategoriesUrl,
   buildReverseGeocodeUrl,
   buildSpotsSearchUrl,
@@ -39,6 +40,7 @@ describe("URL 組み立て", () => {
 
   it("カテゴリ一覧・逆ジオの URL", () => {
     expect(buildCategoriesUrl()).toBe("/api/spots/categories");
+    expect(buildAllSpotsUrl()).toBe("/api/spots");
     expect(buildReverseGeocodeUrl(-33.869, 151.209)).toBe("/api/geocode/reverse?lat=-33.869&lng=151.209");
   });
 });

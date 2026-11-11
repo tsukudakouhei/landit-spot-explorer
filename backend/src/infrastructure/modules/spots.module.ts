@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ListCategoriesUseCase } from '../../application/list-categories.usecase';
+import { ListSpotsUseCase } from '../../application/list-spots.usecase';
 import { SearchSpotsUseCase } from '../../application/search-spots.usecase';
 import { SPOT_REPOSITORY, SpotRepository } from '../../domain/spot/spot.repository';
 import { SpotsController } from '../http/spots.controller';
@@ -23,6 +24,11 @@ import { TypeOrmSpotRepository } from '../persistence/typeorm/repositories/typeo
       provide: SearchSpotsUseCase,
       inject: [SPOT_REPOSITORY],
       useFactory: (spots: SpotRepository) => new SearchSpotsUseCase(spots),
+    },
+    {
+      provide: ListSpotsUseCase,
+      inject: [SPOT_REPOSITORY],
+      useFactory: (spots: SpotRepository) => new ListSpotsUseCase(spots),
     },
     {
       provide: ListCategoriesUseCase,

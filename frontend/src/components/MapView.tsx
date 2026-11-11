@@ -3,7 +3,7 @@
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
 import { APIProvider, Circle, Map, useMap, useMapsLibrary, type MapEvent } from "@vis.gl/react-google-maps";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Spot } from "@/lib/api";
+import type { MapSpot } from "@/lib/api";
 import { INITIAL_CENTER, type LatLng } from "@/lib/geo";
 import { circleBounds } from "@/lib/map/circleBounds";
 import { createIdleGate, type IdleGate } from "@/lib/map/idleGate";
@@ -33,6 +33,7 @@ const COLORS = {
   circleStroke: "#2563eb", // blue-600
   circleFill: "#3b82f6", // blue-500
   pin: { background: "#2563eb", borderColor: "#1e40af", glyphColor: "#ffffff" }, // blue-600 / blue-800
+  pinOutside: { background: "#94a3b8", borderColor: "#64748b", glyphColor: "#f1f5f9" }, // slate-400 / slate-500
   pinSelected: { background: "#f97316", borderColor: "#c2410c", glyphColor: "#ffffff" }, // orange-500 / orange-700
 } as const;
 
@@ -43,12 +44,15 @@ type Props = {
   radiusKm: number;
   /** 検索に使っている半径（スライダーが止まってから確定した値）。地図のズームはこちらに合わせる */
   fitRadiusKm: number;
-  spots: Spot[];
+  /** 地図に出す全スポット（半径の外も含む） */
+  spots: MapSpot[];
+  /** 半径内（＝リストに出ている）スポットの id。濃いピンにする。それ以外は薄いピン */
+  activeIds: ReadonlySet<string>;
   selection: Selection | null;
   recenter: Recenter | null;
   /** 地図の移動が止まるたび（idle）に、生の中心座標で呼ばれる。debounce / 丸めは呼び出し側の責務 */
   onCenterIdle: (center: LatLng) => void;
-  onMarkerSelect: (spot: Spot) => void;
+  onMarkerSelect: (spot: MapSpot) => void;
 };
 
 export function MapView({
@@ -57,6 +61,7 @@ export function MapView({
   radiusKm,
   fitRadiusKm,
   spots,
+  activeIds,
   selection,
   recenter,
   onCenterIdle,
@@ -102,7 +107,12 @@ export function MapView({
           fillColor={COLORS.circleFill}
           fillOpacity={0.08}
         />
-        <ClusteredSpotMarkers spots={spots} selectedId={selection?.id ?? null} onSelect={onMarkerSelect} />
+        <ClusteredSpotMarkers
+          spots={spots}
+          activeIds={activeIds}
+          selectedId={selection?.id ?? null}
+          onSelect={onMarkerSelect}
+        />
         <PanToListSelection selection={selection} idleGate={idleGate} />
         <FitToSearchArea searchCenter={searchCenter} radiusKm={fitRadiusKm} recenter={recenter} idleGate={idleGate} />
       </Map>
@@ -183,25 +193,31 @@ type MarkerEntry = {
   pin: google.maps.marker.PinElement;
 };
 
+type PinState = "selected" | "active" | "outside";
+
 /**
  * スポットのマーカーを @googlemaps/markerclusterer でまとめて描く。
  * MarkerClusterer は命令的な API なので、React の宣言的な <AdvancedMarker> ではなく effect で同期する。
+ * 半径内は濃いピン、半径の外は薄いピンにする。地図を引くと全国のピンがクラスタにまとまって見える。
  * 選択中のマーカーはクラスタから外して単独で置き、クラスタに埋もれて見えなくならないようにする。
  */
 function ClusteredSpotMarkers({
   spots,
+  activeIds,
   selectedId,
   onSelect,
 }: {
-  spots: Spot[];
+  spots: MapSpot[];
+  activeIds: ReadonlySet<string>;
   selectedId: string | null;
-  onSelect: (spot: Spot) => void;
+  onSelect: (spot: MapSpot) => void;
 }) {
   const map = useMap();
   const markerLib = useMapsLibrary("marker");
   const clustererRef = useRef<MarkerClusterer | null>(null);
   const entriesRef = useRef(new globalThis.Map<string, MarkerEntry>());
-  const selectedIdRef = useRef(selectedId);
+  /** いまクラスタから外して単独表示しているマーカーの id */
+  const detachedIdRef = useRef<string | null>(null);
   const onSelectRef = useRef(onSelect);
 
   useEffect(() => {
@@ -220,14 +236,14 @@ function ClusteredSpotMarkers({
     };
   }, [map]);
 
-  // 検索結果が変わったらマーカーを作り直す（最大 200 件なので差分更新はしない）
+  // 地図に出すスポットが変わったらマーカーを作り直す（最大 200 件なので差分更新はしない）
   useEffect(() => {
     const clusterer = clustererRef.current;
     if (!map || !markerLib || !clusterer) return;
 
     const entries = new globalThis.Map<string, MarkerEntry>();
     for (const spot of spots) {
-      const pin = new markerLib.PinElement(COLORS.pin);
+      const pin = new markerLib.PinElement(COLORS.pinOutside);
       const marker = new markerLib.AdvancedMarkerElement({
         position: { lat: spot.lat, lng: spot.lng },
         title: spot.name,
@@ -238,54 +254,51 @@ function ClusteredSpotMarkers({
       entries.set(spot.id, { marker, pin });
     }
     entriesRef.current = entries;
-
-    const clustered: google.maps.marker.AdvancedMarkerElement[] = [];
-    for (const [id, entry] of entries) {
-      if (id === selectedIdRef.current) {
-        applySelectedStyle(entry, true);
-        entry.marker.map = map;
-      } else {
-        clustered.push(entry.marker);
-      }
-    }
-    clusterer.addMarkers(clustered);
+    detachedIdRef.current = null;
+    clusterer.addMarkers([...entries.values()].map((entry) => entry.marker));
 
     return () => {
       clusterer.clearMarkers();
       for (const { marker } of entries.values()) marker.map = null;
       entriesRef.current = new globalThis.Map();
+      detachedIdRef.current = null;
     };
   }, [map, markerLib, spots]);
 
-  // 選択が変わったら、前の選択をクラスタに戻し、新しい選択を強調して単独表示にする
+  // 半径内かどうか・選択中かどうかでピンの見た目を塗り分ける。マーカーを作り直した直後にも走る
   useEffect(() => {
     const clusterer = clustererRef.current;
-    const prevId = selectedIdRef.current;
-    selectedIdRef.current = selectedId;
-    if (!map || !clusterer || prevId === selectedId) return;
+    if (!map || !markerLib || !clusterer) return;
+    const entries = entriesRef.current;
 
-    const prev = prevId ? entriesRef.current.get(prevId) : undefined;
+    for (const [id, entry] of entries) {
+      applyPinState(entry, id === selectedId ? "selected" : activeIds.has(id) ? "active" : "outside");
+    }
+
+    const detachedId = detachedIdRef.current;
+    if (detachedId === selectedId) return;
+    // 前の選択をクラスタに戻し、新しい選択を単独表示にする
+    const prev = detachedId ? entries.get(detachedId) : undefined;
     if (prev) {
-      applySelectedStyle(prev, false);
       prev.marker.map = null;
       clusterer.addMarker(prev.marker);
     }
-    const next = selectedId ? entriesRef.current.get(selectedId) : undefined;
+    const next = selectedId ? entries.get(selectedId) : undefined;
     if (next) {
       clusterer.removeMarker(next.marker);
-      applySelectedStyle(next, true);
       next.marker.map = map;
     }
-  }, [map, selectedId]);
+    detachedIdRef.current = next ? selectedId : null;
+  }, [map, markerLib, spots, activeIds, selectedId]);
 
   return null;
 }
 
-function applySelectedStyle({ marker, pin }: MarkerEntry, selected: boolean) {
-  const colors = selected ? COLORS.pinSelected : COLORS.pin;
+function applyPinState({ marker, pin }: MarkerEntry, state: PinState) {
+  const colors = state === "selected" ? COLORS.pinSelected : state === "active" ? COLORS.pin : COLORS.pinOutside;
   pin.background = colors.background;
   pin.borderColor = colors.borderColor;
   pin.glyphColor = colors.glyphColor;
-  pin.scale = selected ? 1.4 : 1;
-  marker.zIndex = selected ? 1000 : null;
+  pin.scale = state === "selected" ? 1.4 : state === "active" ? 1 : 0.75;
+  marker.zIndex = state === "selected" ? 1000 : state === "active" ? 10 : null;
 }

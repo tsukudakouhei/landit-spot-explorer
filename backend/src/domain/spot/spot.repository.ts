@@ -1,4 +1,4 @@
-import { Coordinates, NewSpot, SpotWithDistance } from './spot.entity';
+import { Coordinates, NewSpot, Spot, SpotWithDistance } from './spot.entity';
 
 /** DI トークン。domain がフレームワークを知らずに済むよう Symbol で定義する。 */
 export const SPOT_REPOSITORY = Symbol('SPOT_REPOSITORY');
@@ -20,6 +20,8 @@ export interface UpsertResult {
 export interface SpotRepository {
   /** center から radiusM 以内のスポットを距離昇順で返す。 */
   findWithinRadius(criteria: SpotSearchCriteria): Promise<SpotWithDistance[]>;
+  /** 全スポットを名前の昇順で返す（地図に全体を表示するため）。 */
+  findAll(): Promise<Spot[]>;
   /** 登録済みカテゴリを重複なし・昇順で返す。 */
   listCategories(): Promise<string[]>;
   /** name をキーに冪等に登録・更新する。 */

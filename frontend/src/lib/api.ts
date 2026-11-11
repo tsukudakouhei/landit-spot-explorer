@@ -18,6 +18,11 @@ export type SpotSearchResponse = {
   radiusKm: number;
 };
 
+/** 地図に出すだけのスポット（検索中心からの距離を持たない） */
+export type MapSpot = Omit<Spot, "distanceM">;
+
+export type AllSpotsResponse = { items: MapSpot[]; total: number };
+
 export type CategoriesResponse = { items: string[] };
 
 /**
@@ -63,6 +68,10 @@ export function buildSpotsSearchUrl({ lat, lng, radiusKm, category }: SpotSearch
   return `${API_BASE}/spots/search?${params.toString()}`;
 }
 
+export function buildAllSpotsUrl(): string {
+  return `${API_BASE}/spots`;
+}
+
 export function buildCategoriesUrl(): string {
   return `${API_BASE}/spots/categories`;
 }
@@ -101,6 +110,10 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 export function searchSpots(params: SpotSearchParams, signal?: AbortSignal): Promise<SpotSearchResponse> {
   return getJson<SpotSearchResponse>(buildSpotsSearchUrl(params), signal);
+}
+
+export function fetchAllSpots(signal?: AbortSignal): Promise<AllSpotsResponse> {
+  return getJson<AllSpotsResponse>(buildAllSpotsUrl(), signal);
 }
 
 export function fetchCategories(signal?: AbortSignal): Promise<CategoriesResponse> {
