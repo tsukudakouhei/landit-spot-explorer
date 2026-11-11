@@ -5,6 +5,7 @@ import { APIProvider, Circle, Map, useMap, useMapsLibrary, type MapEvent } from 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Spot } from "@/lib/api";
 import { INITIAL_CENTER, type LatLng } from "@/lib/geo";
+import { circleBounds } from "@/lib/map/circleBounds";
 import { createIdleGate, type IdleGate } from "@/lib/map/idleGate";
 
 /** 選択中のスポット。どちらから選んだかで、地図をパンするか / リストをスクロールするかを分ける */
@@ -22,8 +23,10 @@ export type Recenter = {
 
 /** AdvancedMarkerElement には Map ID が必須。Google が開発用に用意しているデモ ID を使う */
 const MAP_ID = "DEMO_MAP_ID";
-/** 半径 2km の円がおおよそ収まるズーム */
+/** 地図ができた直後のズーム。すぐに FitToSearchArea が円に合わせ直す */
 const DEFAULT_ZOOM = 14;
+/** 円と地図の端のあいだに空ける余白（px） */
+const FIT_PADDING_PX = 24;
 
 /** Google Maps の描画 API は CSS クラスを受け取れないので色を文字列で渡す（Tailwind の blue / orange 系に合わせる） */
 const COLORS = {
@@ -38,6 +41,8 @@ type Props = {
   /** 丸めた検索中心。半径円はここに描く（＝リストの検索範囲そのもの） */
   searchCenter: LatLng;
   radiusKm: number;
+  /** 検索に使っている半径（スライダーが止まってから確定した値）。地図のズームはこちらに合わせる */
+  fitRadiusKm: number;
   spots: Spot[];
   selection: Selection | null;
   recenter: Recenter | null;
@@ -50,6 +55,7 @@ export function MapView({
   apiKey,
   searchCenter,
   radiusKm,
+  fitRadiusKm,
   spots,
   selection,
   recenter,
@@ -98,7 +104,7 @@ export function MapView({
         />
         <ClusteredSpotMarkers spots={spots} selectedId={selection?.id ?? null} onSelect={onMarkerSelect} />
         <PanToListSelection selection={selection} idleGate={idleGate} />
-        <MoveToRecenter recenter={recenter} idleGate={idleGate} />
+        <FitToSearchArea searchCenter={searchCenter} radiusKm={fitRadiusKm} recenter={recenter} idleGate={idleGate} />
       </Map>
       {/* 地図の中心（＝次に検索される地点）の目印 */}
       <div aria-hidden="true" className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -134,20 +140,40 @@ function PanToListSelection({
 }
 
 /**
- * エリアボタンで選ばれた地点へ地図を移動する。
- * 離れた都市へ飛ぶので、アニメーションする panTo ではなく setCenter で即座に切り替える。
- * 検索中心は呼び出し側が先に確定済み。移動後の idle は同じグリッドを提案するだけなので、ゲートは開けておく。
+ * 検索範囲の円全体が見えるように、地図の中心とズームを合わせる。
+ * 合わせるのは「最初の表示」「半径を変えたとき」「エリアボタンで移動したとき」だけ。
+ * ユーザーが地図を動かして検索中心が変わったときは合わせない（操作した位置から地図が勝手に動くのを避ける）。
+ * 合わせた後の idle は同じグリッドを提案するだけなので再検索は起きない。
  */
-function MoveToRecenter({ recenter, idleGate }: { recenter: Recenter | null; idleGate: IdleGate }) {
+function FitToSearchArea({
+  searchCenter,
+  radiusKm,
+  recenter,
+  idleGate,
+}: {
+  searchCenter: LatLng;
+  radiusKm: number;
+  recenter: Recenter | null;
+  idleGate: IdleGate;
+}) {
   const map = useMap();
+  const centerRef = useRef(searchCenter);
+  const handledSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!map || !recenter) return;
+    centerRef.current = searchCenter;
+  }, [searchCenter]);
+
+  useEffect(() => {
+    if (!map) return;
     // 直前のリスト選択で立てた「次の idle を捨てる」予約が残っていても、この移動には持ち越さない
     idleGate.userGesture();
-    map.setCenter(recenter.center);
-    map.setZoom(DEFAULT_ZOOM);
-  }, [map, recenter, idleGate]);
+    // エリア移動の要求は 1 回だけ使う。その後に半径だけ変えたときは、今の検索中心に合わせる
+    const isNewRecenter = recenter !== null && recenter.seq !== handledSeqRef.current;
+    if (recenter) handledSeqRef.current = recenter.seq;
+    const target = isNewRecenter ? recenter.center : centerRef.current;
+    map.fitBounds(circleBounds(target, radiusKm), FIT_PADDING_PX);
+  }, [map, radiusKm, recenter, idleGate]);
 
   return null;
 }

@@ -7,7 +7,7 @@ import { INITIAL_CENTER, type LatLng } from "@/lib/geo";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useReverseGeocode } from "@/lib/hooks/useReverseGeocode";
 import { useSearchCenter } from "@/lib/hooks/useSearchCenter";
-import { useSpotsSearch } from "@/lib/hooks/useSpotsSearch";
+import { useAreaCounts, useSpotsSearch } from "@/lib/hooks/useSpotsSearch";
 import { AreaPicker } from "./AreaPicker";
 import { CategoryFilter } from "./CategoryFilter";
 import { CenterAddress } from "./CenterAddress";
@@ -45,6 +45,7 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
 
   const spotsQuery = useSpotsSearch(center, searchRadiusKm, category);
   const geocodeQuery = useReverseGeocode(center);
+  const areaCounts = useAreaCounts(searchRadiusKm, category, gridDecimals);
   const spots = spotsQuery.data?.items ?? NO_SPOTS;
 
   const selectFromMap = useCallback((spot: Spot) => {
@@ -85,6 +86,7 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
                 apiKey={apiKey}
                 searchCenter={center}
                 radiusKm={radiusKm}
+                fitRadiusKm={searchRadiusKm}
                 spots={spots}
                 selection={selection}
                 recenter={recenter}
@@ -101,7 +103,12 @@ export function SpotExplorer({ apiKey, gridDecimals }: Props) {
       <aside className="flex flex-col border-t border-slate-200 bg-white lg:h-full lg:w-[35%] lg:border-t-0 lg:border-l">
         <div className="space-y-4 border-b border-slate-200 bg-slate-50 p-4">
           <h2 className="sr-only">検索条件</h2>
-          <AreaPicker center={center} gridDecimals={gridDecimals} onSelect={moveToArea} />
+          <AreaPicker
+            center={center}
+            gridDecimals={gridDecimals}
+            counts={category === null ? null : areaCounts}
+            onSelect={moveToArea}
+          />
           <RadiusControl value={radiusKm} onChange={setRadiusKm} />
           <CategoryFilter value={category} onChange={setCategory} />
         </div>
